@@ -1,0 +1,95 @@
+# LatentIntercept
+
+**TD-MPC2 + Genesis** robotics RL — a Franka Emika arm learns to intercept a sliding block in real time.
+
+![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue)
+![Genesis](https://img.shields.io/badge/physics-Genesis-orange)
+![TD--MPC2](https://img.shields.io/badge/RL-TD--MPC2-green)
+
+## Overview
+
+A 7-DOF Franka arm sits at a table. A block is launched from the far end at random speed (0.5–2.5 m/s) and angle (±30°). The agent must intercept the block before it exits the workspace — an *air-hockey goalie* problem requiring predictive planning.
+
+**Why TD-MPC2?** Its learned world model enables MPPI planning 12 steps ahead (~1.2 s), letting the arm *anticipate* the block trajectory rather than react to it.
+
+## Quick Start
+
+```bash
+# 1. Install
+pip install -r requirements.txt
+pip install git+https://github.com/nicklashansen/tdmpc2.git
+
+# 2. Validate physics scene
+python scripts/validate_env.py --steps 150
+
+# 3. Train (dry-run)
+python scripts/train.py training.total_steps=1000
+
+# 4. Full training
+python scripts/train.py
+tensorboard --logdir runs/
+
+# 5. Monitor training health
+python scripts/monitor.py
+
+# 6. Evaluate
+python scripts/infer.py --checkpoint trained_models/final.pt --render
+
+# 7. Portfolio plot
+python scripts/visualize_trajectories.py \
+    --checkpoint trained_models/final.pt \
+    --output outputs/trajectory_3d.png --pdf
+```
+
+## Architecture
+
+```
+configs/base_config.yaml          ← All hyperparameters
+scripts/
+  validate_env.py                 ← Visual smoke-test
+  train.py                        ← TD-MPC2 training loop
+  infer.py                        ← Checkpoint evaluation
+  monitor.py                      ← TensorBoard health check
+  visualize_trajectories.py       ← 3D trajectory plot (PNG/PDF)
+src/
+  environments/
+    air_hockey_env.py             ← Genesis scene (Franka + table + block)
+    wrapper.py                    ← 24D obs, dense reward, TD-MPC2 interface
+  agent/
+    tdmpc2_config.py              ← OmegaConf config builder
+  utils/
+    logger.py                     ← TensorBoard scalar logging
+```
+
+## Observation Space (24D)
+
+| Index | Description |
+|-------|-------------|
+| 0–6   | Franka joint angles (rad) |
+| 7–13  | Franka joint velocities (rad/s) |
+| 14    | Gripper finger position (m) |
+| 15–17 | Block position XYZ (m) |
+| 18–20 | Block velocity XYZ (m/s) |
+| 21–23 | EE → Block relative vector (m) |
+
+## Reward
+
+```
+R = 0.4·exp(-‖p_ee - p_block‖) + 0.2·exp(-‖v_ee - v_block‖) + 10·catch_bonus
+```
+
+Dense distance + velocity-matching signal ensures continuous gradient. The catch bonus (dist < 5 cm & vel_diff < 0.5 m/s) provides the terminal objective.
+
+## Key Hyperparameters
+
+| Parameter | Value | Notes |
+|-----------|-------|-------|
+| Parallel envs | 256 | GPU-batched Genesis scenes |
+| MPPI horizon | 12 | ~1.2 s lookahead at 10 Hz |
+| Learning rate | 3e-4 | Adam, world model + policy |
+| Replay buffer | 1M | Uniform sampling |
+| Total steps | 10M | Checkpoint every 1M |
+
+## License
+
+MIT
