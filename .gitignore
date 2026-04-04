@@ -10,9 +10,9 @@ build/
 runs/
 trained_models/*.pt
 !trained_models/.gitkeep
-outputs/*.png
 outputs/*.pdf
 !outputs/.gitkeep
+!outputs/trajectory_*.png
 
 # IDE
 .vscode/

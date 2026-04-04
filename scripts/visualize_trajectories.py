@@ -59,7 +59,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--config",  type=str, default="configs/base_config.yaml")
     p.add_argument("--output",  type=str, default="outputs/trajectory_3d.png")
     p.add_argument("--pdf",     action="store_true", help="Also save as PDF")
+    p.add_argument("--gui",     action="store_true", help="Open Genesis 3-D viewer")
     p.add_argument("--device",  type=str, default="cuda")
+    p.add_argument("--steps",   type=int, default=None,
+                   help="Override episode length (default: use env episode_len)")
     p.add_argument("--seed",    type=int, default=42)
     return p.parse_args()
 
@@ -73,6 +76,7 @@ def collect_episode(
     env: AirHockeyEnv,
     agent=None,
     device: str = "cuda",
+    max_steps: int | None = None,
 ) -> dict:
     """
     Run one episode and record EE + block positions at every control step.
@@ -90,7 +94,8 @@ def collect_episode(
     caught = False
     catch_idx = None
 
-    for step in range(env.episode_len):
+    n_steps = max_steps if max_steps is not None else env.episode_len
+    for step in range(n_steps):
         # ── Read positions from the obs vector ──────────────────────────
         # obs layout: [0:7 q, 7:14 qd, 14 grip, 15:18 p_block, 18:21 v_block, 21:24 rel]
         p_block = obs[0, 15:18].cpu().numpy()
@@ -277,10 +282,12 @@ def main() -> None:
     cfg_path = ROOT / args.config
     base_cfg = yaml.safe_load(cfg_path.read_text()) if cfg_path.exists() else {}
 
+    ep_len = args.steps if args.steps is not None else base_cfg.get("episode_len", 200)
     env = AirHockeyEnv(
         n_envs=1,
+        episode_len=ep_len,
         device=args.device,
-        show_viewer=False,
+        show_viewer=args.gui,
         seed=args.seed,
         cfg=base_cfg,
     )
@@ -306,7 +313,8 @@ def main() -> None:
             agent.eval()
 
     print("  Collecting episode...")
-    data = collect_episode(wrapper, env, agent=agent, device=args.device)
+    data = collect_episode(wrapper, env, agent=agent, device=args.device,
+                           max_steps=args.steps)
     print(f"  Episode length: {len(data['ee_traj'])} steps  |  "
           f"Caught: {'YES ✓' if data['caught'] else 'NO ✗'}")
 

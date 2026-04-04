@@ -190,7 +190,10 @@ def main() -> None:
     for i in range(n_envs):
         ep_obs[i].append(obs[i].cpu())
 
-    for global_step in range(start_step, total_steps):
+    global_step = start_step
+    iters_since_log = 0
+
+    while global_step < total_steps:
         seed_phase = global_step < agent_cfg.seed_steps
 
         # ─ Act ───────────────────────────────────────────────────────────────
@@ -254,19 +257,24 @@ def main() -> None:
         # ─ Update world model ─────────────────────────────────────────────────
         train_info = {}
         if not seed_phase and buffer.num_eps > 0:
-            train_info_td = agent.update(buffer)
-            # TensorDict → plain dict for logging
-            train_info = {k: v.item() for k, v in train_info_td.items()
-                          if hasattr(v, "item")}
+            try:
+                train_info_td = agent.update(buffer)
+                train_info = {k: v.item() for k, v in train_info_td.items()
+                              if hasattr(v, "item")}
+            except RuntimeError:
+                pass  # not enough long trajectories in buffer yet
 
         ep_reward_sum += reward
+        global_step += n_envs
+        iters_since_log += 1
 
-        # ─ Logging ───────────────────────────────────────────────────────────
-        if global_step % log_interval == 0 and global_step > start_step:
+        # ─ Logging (fires when global_step crosses a log_interval boundary) ──
+        if global_step % log_interval < n_envs and global_step > start_step + n_envs:
             elapsed = time.time() - t_start
-            fps     = (global_step - start_step) * n_envs / elapsed if elapsed > 0 else 0
-            mean_r  = ep_reward_sum.mean().item() / log_interval
+            fps     = (global_step - start_step) / elapsed if elapsed > 0 else 0
+            mean_r  = ep_reward_sum.mean().item() / max(iters_since_log, 1)
             ep_reward_sum.zero_()
+            iters_since_log = 0
 
             logger.log_scalar("train/mean_reward",  mean_r,               global_step)
             logger.log_scalar("train/success_rate", wrapper.success_rate, global_step)
@@ -275,16 +283,16 @@ def main() -> None:
                 logger.log_scalar(f"train/{k}", v, global_step)
 
             print(
-                f"step {global_step:>8,} | "
+                f"step {global_step:>10,} / {total_steps:,} | "
                 f"reward {mean_r:+.4f} | "
                 f"success {wrapper.success_rate:.2%} | "
-                f"fps {fps:.0f} | "
+                f"fps {fps:,.0f} | "
                 f"buf_eps {buffer.num_eps}"
             )
             wrapper.reset_stats()
 
         # ─ Evaluation ────────────────────────────────────────────────────────
-        if global_step % eval_interval == 0 and global_step > 0:
+        if global_step % eval_interval < n_envs and global_step > n_envs:
             saved_successes = wrapper._successes
             saved_episodes  = wrapper._episodes
             saved_ep_reward = wrapper._ep_reward.clone()
@@ -300,8 +308,6 @@ def main() -> None:
                 f"reward={eval_reward:.4f}\n"
             )
 
-            # Re-sync training state: evaluate() resets the wrapper internally,
-            # so obs and per-env episode accumulators are stale.
             obs = wrapper.reset()
             ep_obs  = [[obs[i].cpu()] for i in range(n_envs)]
             ep_act  = [[] for _ in range(n_envs)]
@@ -310,7 +316,7 @@ def main() -> None:
             ep_reward_sum.zero_()
 
         # ─ Checkpoint ────────────────────────────────────────────────────────
-        if global_step % checkpoint_interval == 0 and global_step > 0:
+        if global_step % checkpoint_interval < n_envs and global_step > n_envs:
             ckpt_path = checkpoint_dir / f"step_{global_step:08d}.pt"
             agent.save(ckpt_path)
             print(f"[CKPT] Saved → {ckpt_path}")

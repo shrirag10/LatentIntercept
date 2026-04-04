@@ -41,7 +41,7 @@ def build_tdmpc2_config(base_cfg: dict | None = None) -> DictConfig:
         # ── Episode / buffer sizing ───────────────────────────────────────────
         "episode_length":  episode_len, # required by TDMPC2._get_discount()
         "steps":           10_000_000,  # required by Buffer._capacity = min(buffer_size, steps)
-        "seed_steps":      5_000,       # random exploration before planning
+        "seed_steps":      50_000,      # random exploration before planning
 
         # ── Network dimensions ───────────────────────────────────────────────
         "obs_dim":       24,            # must match AirHockeyEnv.OBS_DIM
@@ -97,6 +97,7 @@ def build_tdmpc2_config(base_cfg: dict | None = None) -> DictConfig:
         "num_bins": 201,
         "vmin":     -100,
         "vmax":     +100,
+        "bin_size": 200 / (201 - 1),  # (vmax - vmin) / (num_bins - 1)
 
         # ── Hardware ─────────────────────────────────────────────────────────
         "device":  "cuda",
