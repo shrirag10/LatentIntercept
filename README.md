@@ -80,6 +80,28 @@ R = 0.4·exp(-‖p_ee - p_block‖) + 0.2·exp(-‖v_ee - v_block‖) + 10·catc
 
 Dense distance + velocity-matching signal ensures continuous gradient. The catch bonus (dist < 5 cm & vel_diff < 0.5 m/s) provides the terminal objective.
 
+## Zero-Shot Results (TD-MPC2, Untrained)
+
+Before any training, the TD-MPC2 agent runs with a **randomly initialised** world model and policy. MPPI planning (512 samples, 12-step horizon) effectively degenerates to random search since the latent dynamics carry no predictive information yet.
+
+### Trajectory Plots — 500 / 700 / 1000 Steps
+
+![Zero-shot comparison](videos/zero_shot_comparison.gif)
+
+| 500 Steps | 700 Steps | 1000 Steps |
+|-----------|-----------|------------|
+| ![500](outputs/trajectory_zero_shot_500.png) | ![700](outputs/trajectory_zero_shot_700.png) | ![1000](outputs/trajectory_zero_shot_1000.png) |
+
+- **500 steps** — EE jitters in a tight cluster near home pose; no goal-directed motion.
+- **700 steps** — Longer episode lets random joint deltas accumulate into a sweeping arc; EE reaches the block's quadrant by coincidence, not learned tracking.
+- **1000 steps** — EE drifts further toward the block's post-bounce region due to joint-limit saturation bias. Still **no successful intercept** (CATCH).
+
+### Genesis Simulation — Side-by-Side
+
+![Robot comparison](videos/zero_shot_robot_comparison.gif)
+
+> Full per-run analysis: [`videos/inferences_zero_shot_500_700_1000.md`](videos/inferences_zero_shot_500_700_1000.md)
+
 ## Key Hyperparameters
 
 | Parameter | Value | Notes |
