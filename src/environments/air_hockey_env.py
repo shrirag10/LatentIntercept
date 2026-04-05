@@ -65,6 +65,9 @@ class AirHockeyEnv:
     BLOCK_SPAWN_X_RANGE = (0.4, 0.7)  # spawn zone in +X
     BLOCK_SPEED_RANGE   = (1.5, 3.5)  # m/s
     BLOCK_ANGLE_RANGE   = (-30.0, 30.0)  # degrees
+    # Terminate when block slides in +X (away from arm); see _block_moving_away
+    RESET_ON_BLOCK_MOVING_AWAY = True
+    BLOCK_MOVING_AWAY_VX_THRESHOLD = 0.25  # m/s — ignore small numerical drift
 
     FRANKA_HOME_Q = [0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785]
     GRIPPER_OPEN  = 0.04             # metres
@@ -76,7 +79,7 @@ class AirHockeyEnv:
 
     POSITION_DELTA_MAX = 0.1  # max joint displacement per control step (rad)
 
-    REWARD_DIST_SCALE = 1.0  # scale factor inside distance exponential
+    REWARD_DIST_SCALE = 5.0  # scale factor inside distance exponential
 
     # ── Observation / action sizes ──────────────────────────────────────────
     OBS_DIM    = 24   # 7 qpos + 7 qvel + 1 gripper + 3 p_block + 3 v_block + 3 rel
@@ -118,7 +121,7 @@ class AirHockeyEnv:
         gs.init(backend=gs.cuda if self.device == "cuda" else gs.cpu)
 
         self.scene = gs.Scene(
-            sim_options=gs.options.SimOptions(dt=self.dt, substeps=4),
+            sim_options=gs.options.SimOptions(dt=self.dt, substeps=16),
             viewer_options=gs.options.ViewerOptions(
                 res=(1280, 720),
                 camera_pos=(0.0, -2.0, 1.8),
@@ -316,7 +319,7 @@ class AirHockeyEnv:
         -------
         obs       : (n_envs, OBS_DIM)
         reward    : (n_envs,)
-        terminated: (n_envs,)  bool — caught or block left table
+        terminated: (n_envs,)  bool — caught, OOB, block moving away (+X), or timeout
         info      : dict
         """
         action = action.to(self.device).float()
@@ -353,14 +356,16 @@ class AirHockeyEnv:
         obs       = self._get_obs()
         caught    = self._detect_catch()
         out_of_bounds = self._block_out_of_bounds()
+        moving_away = self._block_moving_away()
         reward    = self._compute_reward(_caught=caught)
         timeout = self._step_count >= self.episode_len
 
-        terminated = caught | out_of_bounds | timeout
+        terminated = caught | out_of_bounds | moving_away | timeout
 
         info = {
             "caught":        caught,
             "out_of_bounds": out_of_bounds,
+            "moving_away":   moving_away,
             "timeout":       timeout,
         }
 
@@ -416,7 +421,7 @@ class AirHockeyEnv:
         self,
         env_ids: Optional[torch.Tensor] = None,
         w_dist: float = 1.0,
-        w_vel: float  = 0.5,
+        w_vel: float  = 0.1,
         success_bonus: float = 10.0,
         dist_scale: Optional[float] = None,
         _caught: Optional[torch.Tensor] = None,
@@ -512,6 +517,25 @@ class AirHockeyEnv:
 
         return x_oob | y_oob | z_oob
 
+    def _block_moving_away(
+        self,
+        env_ids: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        True when the block's centre-of-mass velocity along +X exceeds the
+        threshold. The nominal intercept direction is -X (toward the arm);
+        sustained +X motion means the puck is sliding away (e.g. after a miss
+        or wall bounce) and the episode can reset early.
+        """
+        if not self.RESET_ON_BLOCK_MOVING_AWAY:
+            envs_idx = None if env_ids is None else env_ids
+            n = self.n_envs if envs_idx is None else env_ids.numel()
+            return torch.zeros(n, dtype=torch.bool, device=self.device)
+
+        envs_idx = None if env_ids is None else env_ids
+        v_block = self.block.get_vel(envs_idx=envs_idx)  # (N, 3)
+        return v_block[:, 0] > self.BLOCK_MOVING_AWAY_VX_THRESHOLD
+
     # ────────────────────────────────────────────────────────────────────────
     # Domain randomisation helpers
     # ────────────────────────────────────────────────────────────────────────
@@ -588,6 +612,12 @@ class AirHockeyEnv:
             self.BLOCK_SPEED_RANGE = tuple(block_cfg["speed_range"])
         if "angle_range" in block_cfg:
             self.BLOCK_ANGLE_RANGE = tuple(block_cfg["angle_range"])
+        if "reset_if_moving_away" in block_cfg:
+            self.RESET_ON_BLOCK_MOVING_AWAY = bool(block_cfg["reset_if_moving_away"])
+        if "moving_away_vx_threshold" in block_cfg:
+            self.BLOCK_MOVING_AWAY_VX_THRESHOLD = float(
+                block_cfg["moving_away_vx_threshold"]
+            )
 
         if "home_q" in franka_cfg:
             self.FRANKA_HOME_Q = list(franka_cfg["home_q"])

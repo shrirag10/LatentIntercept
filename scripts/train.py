@@ -210,7 +210,18 @@ def main() -> None:
             action = torch.stack(actions_list, dim=0)  # (N, 8)
 
         # ─ Step ──────────────────────────────────────────────────────────────
-        next_obs, reward, terminated, info = wrapper.step(action)
+        try:
+            next_obs, reward, terminated, info = wrapper.step(action)
+        except Exception as e:
+            print(f"[WARN] Physics error at step {global_step}: {e}. Resetting all envs.")
+            obs = wrapper.reset()
+            ep_obs  = [[obs[i].cpu()] for i in range(n_envs)]
+            ep_act  = [[] for _ in range(n_envs)]
+            ep_rew  = [[] for _ in range(n_envs)]
+            ep_done = [[] for _ in range(n_envs)]
+            global_step += n_envs
+            iters_since_log += 1
+            continue
 
         # ─ Store transition for each env ──────────────────────────────────────
         for i in range(n_envs):
@@ -362,7 +373,14 @@ def evaluate(
                 actions_list.append(act.to(device))
         action = torch.stack(actions_list, dim=0)
 
-        obs, reward, terminated, info = wrapper.step(action)
+        try:
+            obs, reward, terminated, info = wrapper.step(action)
+        except Exception as e:
+            print(f"[WARN] Physics error during eval step {step}: {e}. Resetting.")
+            obs = wrapper.reset()
+            complete[:] = False
+            step += 1
+            continue
 
         newly_done = terminated & ~complete
         if newly_done.any():

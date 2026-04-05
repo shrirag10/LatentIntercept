@@ -16,11 +16,17 @@ Usage:
 
 The script can also run *without* a checkpoint: it records the block sliding
 across while the arm stays at home position (useful for initial testing).
+
+With ``--gui``, the script disables ``block.reset_if_moving_away`` by default
+so episodes do not end after a few steps (which makes the viewer appear to
+"crash"). Pass ``--training_terminations`` to match training YAML exactly.
 """
 
 from __future__ import annotations
 
 import argparse
+import copy
+import os
 import sys
 from pathlib import Path
 
@@ -60,6 +66,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output",  type=str, default="outputs/trajectory_3d.png")
     p.add_argument("--pdf",     action="store_true", help="Also save as PDF")
     p.add_argument("--gui",     action="store_true", help="Open Genesis 3-D viewer")
+    p.add_argument(
+        "--training_terminations",
+        action="store_true",
+        help="Match training YAML exactly (e.g. reset when block moves +X). "
+             "Default: off — longer episodes for plots / watching.",
+    )
+    p.add_argument(
+        "--gui_no_wait",
+        action="store_true",
+        help="With --gui, do not wait for Enter before closing (viewer exits immediately).",
+    )
     p.add_argument("--device",  type=str, default="cuda")
     p.add_argument("--steps",   type=int, default=None,
                    help="Override episode length (default: use env episode_len)")
@@ -167,6 +184,10 @@ def plot_trajectory(
 
     ee    = data["ee_traj"]
     block = data["block_traj"]
+    if ee.shape[0] < 2 or block.shape[0] < 2:
+        print("  [WARN] Trajectory too short to plot meaningfully; saving minimal figure.")
+    if ee.shape[0] == 0:
+        raise RuntimeError("No trajectory samples recorded — episode ended before first step.")
 
     fig, ax = plt.subplots(figsize=(14, 7), dpi=150)
 
@@ -279,24 +300,46 @@ def plot_trajectory(
 def main() -> None:
     args = parse_args()
 
+    if args.gui:
+        has_display = bool(os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+        if sys.platform != "win32" and not has_display:
+            print(
+                "[ERROR] --gui needs a graphics session. No DISPLAY / WAYLAND_DISPLAY.\n"
+                "        Run from a desktop terminal, or use SSH with X11 forwarding, "
+                "or drop --gui and only save --output PNG.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        if args.device == "cuda":
+            print(
+                "[INFO] If the viewer crashes, try:  --device cpu   "
+                "(some setups conflict on GPU + OpenGL).",
+            )
+
     cfg_path = ROOT / args.config
     base_cfg = yaml.safe_load(cfg_path.read_text()) if cfg_path.exists() else {}
+    # Longer rollouts for visualization unless user wants exact training terminations
+    cfg = copy.deepcopy(base_cfg)
+    if not args.training_terminations:
+        block = dict(cfg.get("block", {}))
+        block["reset_if_moving_away"] = False
+        cfg["block"] = block
 
-    ep_len = args.steps if args.steps is not None else base_cfg.get("episode_len", 200)
+    ep_len = args.steps if args.steps is not None else cfg.get("episode_len", 200)
     env = AirHockeyEnv(
         n_envs=1,
         episode_len=ep_len,
         device=args.device,
         show_viewer=args.gui,
         seed=args.seed,
-        cfg=base_cfg,
+        cfg=cfg,
     )
-    wrapper = GenesisTDMPC2Wrapper(env, cfg=base_cfg)
+    wrapper = GenesisTDMPC2Wrapper(env, cfg=cfg)
 
     # Optionally load agent
     agent = None
     if args.checkpoint is not None or args.zero_shot:
-        agent_cfg = build_tdmpc2_config(base_cfg)
+        agent_cfg = build_tdmpc2_config(cfg)
         from omegaconf import OmegaConf
         OmegaConf.update(agent_cfg, "device", args.device, merge=True)
         try:
@@ -321,7 +364,10 @@ def main() -> None:
     # Predicted block path from initial state
     control_dt = env.dt * env.control_freq
     p0 = data["block_traj"][0]
-    v0 = (data["block_traj"][1] - data["block_traj"][0]) / control_dt
+    if len(data["block_traj"]) >= 2:
+        v0 = (data["block_traj"][1] - data["block_traj"][0]) / control_dt
+    else:
+        v0 = np.zeros(3, dtype=np.float64)
     predicted = predict_block_path(p0, v0, dt=control_dt, n_steps=len(data["block_traj"]))
 
     print("  Plotting...")
@@ -332,6 +378,12 @@ def main() -> None:
         save_pdf=args.pdf,
     )
     print("  Done.")
+
+    if args.gui and not args.gui_no_wait:
+        try:
+            input("  [Genesis viewer] Press Enter to close the viewer and exit… ")
+        except EOFError:
+            pass
 
     wrapper.close()
 

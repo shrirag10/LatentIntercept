@@ -53,9 +53,9 @@ class GenesisTDMPC2Wrapper:
         # ── Reward weights (from config or defaults) ─────────────────────────
         reward_cfg = self._cfg.get("reward", {})
         self._w_dist        = float(reward_cfg.get("w_dist", 1.0))
-        self._w_vel         = float(reward_cfg.get("w_vel", 0.5))
+        self._w_vel         = float(reward_cfg.get("w_vel", 0.1))
         self._success_bonus = float(reward_cfg.get("success_bonus", 10.0))
-        self._dist_scale    = float(reward_cfg.get("dist_scale", 1.0))
+        self._dist_scale    = float(reward_cfg.get("dist_scale", 5.0))
 
         # ── Gym-compatible observation / action spaces ────────────────────────
         obs_lo = np.full(AirHockeyEnv.OBS_DIM, -np.inf, dtype=np.float32)
@@ -118,8 +118,8 @@ class GenesisTDMPC2Wrapper:
         obs, reward, terminated, info = self._env.step(action)
 
         # Recompute reward only if config weights differ from env defaults
-        if (self._w_dist != 1.0 or self._w_vel != 0.5
-                or self._success_bonus != 10.0 or self._dist_scale != 1.0):
+        if (self._w_dist != 1.0 or self._w_vel != 0.1
+                or self._success_bonus != 10.0 or self._dist_scale != 5.0):
             reward = self._recompute_reward_weighted(info["caught"])
 
         self._ep_reward += reward

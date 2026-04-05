@@ -47,9 +47,9 @@ def build_tdmpc2_config(base_cfg: dict | None = None) -> DictConfig:
         "obs_dim":       24,            # must match AirHockeyEnv.OBS_DIM
         "action_dim":    8,             # must match AirHockeyEnv.ACTION_DIM
         "obs_shape":     {"state": [24]},  # encoder iterates keys; "state" → mlp path
-        "latent_dim":    512,
-        "mlp_dim":       512,
-        "enc_dim":       256,
+        "latent_dim":    256,
+        "mlp_dim":       256,
+        "enc_dim":       128,
         "num_enc_layers": 2,
         "num_channels":  32,            # pixel obs (unused but field required)
         "task_dim":      0,             # must be 0 when multitask=False; encoder adds this to input dim
@@ -59,13 +59,13 @@ def build_tdmpc2_config(base_cfg: dict | None = None) -> DictConfig:
 
         # ── MPPI planner ─────────────────────────────────────────────────────
         "mpc":          True,           # use MPPI planning in agent.act()
-        "horizon":      12,             # steps × 10Hz ≈ 1.2 s look-ahead
-        "num_samples":  512,
+        "horizon":      8,             # steps × 10Hz ≈ 0.8 s look-ahead
+        "num_samples":  256,
         "num_elites":   64,
         "num_pi_trajs": 24,
-        "iterations":   6,
+        "iterations":   4,
         "min_std":      0.05,
-        "max_std":      2.0,
+        "max_std":      1.5,
         "temperature":  0.5,
 
         # ── Training ─────────────────────────────────────────────────────────
@@ -75,12 +75,12 @@ def build_tdmpc2_config(base_cfg: dict | None = None) -> DictConfig:
         "enc_lr_scale":    0.3,         # encoder lr = lr * enc_lr_scale
         "grad_clip_norm":  20.0,
         "tau":             0.01,        # target Q EMA decay (soft update)
-        "rho":             0.5,         # consistency / value loss decay per step
+        "rho":             0.75,        # consistency / value loss decay per step
 
         # ── Loss weights ─────────────────────────────────────────────────────
         "consistency_coef":  20.0,
-        "reward_coef":       0.1,
-        "value_coef":        0.1,
+        "reward_coef":       0.5,
+        "value_coef":        0.2,
         "termination_coef":  1.0,
 
         # ── Discount ─────────────────────────────────────────────────────────

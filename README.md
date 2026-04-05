@@ -6,9 +6,11 @@
 ![Genesis](https://img.shields.io/badge/physics-Genesis-orange)
 ![TD--MPC2](https://img.shields.io/badge/RL-TD--MPC2-green)
 
+![Trained 1M catch demo](videos/trained_1m_catch.gif)
+
 ## Overview
 
-A 7-DOF Franka arm sits at a table. A block is launched from the far end at random speed (0.5–2.5 m/s) and angle (±30°). The agent must intercept the block before it exits the workspace — an *air-hockey goalie* problem requiring predictive planning.
+A 7-DOF Franka arm sits at a table. A block is launched from the far end at random speed (1.5–3.5 m/s) and angle (±30°). The agent must intercept the block before it exits the workspace — an *air-hockey goalie* problem requiring predictive planning.
 
 **Why TD-MPC2?** Its learned world model enables MPPI planning 12 steps ahead (~1.2 s), letting the arm *anticipate* the block trajectory rather than react to it.
 
@@ -101,6 +103,35 @@ Before any training, the TD-MPC2 agent runs with a **randomly initialised** worl
 ![Robot comparison](videos/zero_shot_robot_comparison.gif)
 
 > Full per-run analysis: [`videos/inferences_zero_shot_500_700_1000.md`](videos/inferences_zero_shot_500_700_1000.md)
+
+## Trained Results — 1M Steps
+
+After **1 000 000 training steps** the world model and policy have learned the task dynamics. MPPI planning now operates over a **meaningful latent space**, enabling the arm to predict the block's trajectory and move to intercept it.
+
+### Trajectory Plots — 1M Trained (3 evaluation episodes)
+
+![Trained 1M comparison](videos/trained_1m_comparison.gif)
+
+| Run 1 (near-miss) | Run 2 (CATCH) | Run 3 (CATCH) |
+|--------------------|---------------|---------------|
+| ![Run 1](outputs/trajectory_trained_1m.png) | ![Run 2](outputs/trajectory_trained_1m_1.png) | ![Run 3](outputs/trajectory_trained.png) |
+
+- **Run 1** — The EE executes a **smooth, purposeful arc** toward the block's predicted path. The motion is clean and low-jitter compared to zero-shot, showing the world model has learned meaningful dynamics. Near-miss — the arm arrives at the block's region but doesn't satisfy the catch threshold.
+- **Run 2** — **Successful CATCH.** The EE sweeps across the workspace, tracks the block through its bounce, and intercepts it at ~(0.0, 0.1). The green star confirms the distance and velocity thresholds were met simultaneously.
+- **Run 3** — **Successful CATCH.** The EE follows a wider pursuit arc, converging on the block near the table centre at ~(0.0, 0.0). The trajectory is noticeably smoother than any zero-shot attempt — the learned value function provides a clear gradient for MPPI to exploit.
+
+### Genesis Simulation — Trained Agent
+
+![Trained 1M demo](videos/trained_1m_demo.gif)
+
+### Zero-Shot vs Trained — Key Differences
+
+| | Zero-Shot (0 steps) | Trained (1M steps) |
+|---|---|---|
+| EE motion | Random jitter / kinematic drift | Smooth, goal-directed arcs |
+| MPPI planning | Degenerates to random search | Exploits learned latent dynamics |
+| Block tracking | None — coincidental proximity | Active pursuit through bounce |
+| Intercept success | 0 / 3 | 2 / 3 (CATCH) |
 
 ## Key Hyperparameters
 
