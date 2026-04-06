@@ -13,6 +13,7 @@ trained_models/*.pt
 outputs/*.pdf
 !outputs/.gitkeep
 !outputs/trajectory_*.png
+!outputs/trained_1m_pickup.png
 
 # IDE
 .vscode/

@@ -124,6 +124,10 @@ After **1 000 000 training steps** the world model and policy have learned the t
 
 ![Trained 1M demo](videos/trained_1m_demo.gif)
 
+**Successful pickup** (1M-step policy, Genesis viewer):
+
+![Trained 1M — block grasped](outputs/trained_1m_pickup.png)
+
 ### Zero-Shot vs Trained — Key Differences
 
 | | Zero-Shot (0 steps) | Trained (1M steps) |
